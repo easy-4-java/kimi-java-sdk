@@ -168,8 +168,10 @@ public class KimiCliExecutor {
         long startNanos = System.nanoTime();
         try {
             int exitCode = executor.execute(cmd);
-            String out = stdout.toString().trim();
-            String err = stderr.toString().trim();
+            // The CLI emits UTF-8; decoding with the platform default charset
+            // corrupts non-ASCII output on C-locale environments.
+            String out = stdout.toString(StandardCharsets.UTF_8).trim();
+            String err = stderr.toString(StandardCharsets.UTF_8).trim();
             log.debug("kimi CLI executed: exitCode={}, stdout.len={}", exitCode, out.length());
             if (watchdog.killedProcess()) {
                 return new KimiCliResult(-1, out, "kimi CLI timed out after " + timeoutMs + " ms\n" + err);
@@ -182,8 +184,8 @@ public class KimiCliExecutor {
             // with the real exit code instead of discarding the output. The
             // deadline check makes the timeout verdict race-free even when
             // {@code watchdog.killedProcess()} has not observed the kill yet.
-            String out = stdout.toString().trim();
-            String err = stderr.toString().trim();
+            String out = stdout.toString(StandardCharsets.UTF_8).trim();
+            String err = stderr.toString(StandardCharsets.UTF_8).trim();
             boolean timedOut = watchdog.killedProcess()
                     || System.nanoTime() - startNanos >= timeoutMs * 1_000_000L;
             if (timedOut) {

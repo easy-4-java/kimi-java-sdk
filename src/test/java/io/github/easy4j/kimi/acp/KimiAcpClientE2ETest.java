@@ -111,6 +111,23 @@ class KimiAcpClientE2ETest {
     }
 
     @Test
+    void shouldRejectDoubleConnect() {
+        try (KimiAcpClient client = new KimiAcpClient(config())) {
+            client.connect();
+            assertThrows(IllegalStateException.class, client::connect);
+        }
+    }
+
+    @Test
+    void shouldAllowRetryAfterFailedConnectWithoutLeakingProcess() {
+        KimiAcpConfig config = config();
+        config.setLocalExecutable("/nonexistent/kimi");
+        KimiAcpClient client = new KimiAcpClient(config);
+        assertThrows(KimiException.class, client::connect);
+        assertFalse(client.isClosed(), "failed connect must leave the client open for a retry");
+    }
+
+    @Test
     void shouldRejectUseAfterClose() {
         KimiAcpClient client = new KimiAcpClient(config());
         client.close();

@@ -115,6 +115,12 @@ class KimiCliTest {
     }
 
     @Test
+    void shouldRejectSessionAndContinueTogether() {
+        KimiCli.RunOptions options = new KimiCli.RunOptions("hi", null).session("s1").continueLast(true);
+        assertThrows(IllegalArgumentException.class, () -> echoCli().prompt(options));
+    }
+
+    @Test
     void shouldRejectBlankPrompt() {
         assertThrows(IllegalArgumentException.class, () -> echoCli().prompt("  "));
         assertThrows(IllegalArgumentException.class,

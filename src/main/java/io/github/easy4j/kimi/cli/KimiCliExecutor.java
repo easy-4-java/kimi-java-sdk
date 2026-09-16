@@ -139,6 +139,19 @@ public class KimiCliExecutor {
         }
     }
 
+    /**
+     * Decodes the buffer as UTF-8. {@code ByteArrayOutputStream.toString(Charset)}
+     * requires Java 10+, so this line uses the String-name overload; UTF-8 is
+     * guaranteed on every JVM, making the fallback branch unreachable.
+     */
+    private static String decodeUtf8(ByteArrayOutputStream buffer) {
+        try {
+            return buffer.toString("UTF-8");
+        } catch (java.io.UnsupportedEncodingException e) {
+            return buffer.toString();
+        }
+    }
+
     private KimiCliResult runProcess(String stdin, String... args) {
         CommandLine cmd = CommandLine.parse(config.getLocalExecutable());
         for (String arg : args) {
@@ -168,8 +181,10 @@ public class KimiCliExecutor {
         long startNanos = System.nanoTime();
         try {
             int exitCode = executor.execute(cmd);
-            String out = stdout.toString().trim();
-            String err = stderr.toString().trim();
+            // The CLI emits UTF-8; decoding with the platform default charset
+            // corrupts non-ASCII output on C-locale environments.
+            String out = decodeUtf8(stdout).trim();
+            String err = decodeUtf8(stderr).trim();
             log.debug("kimi CLI executed: exitCode={}, stdout.len={}", exitCode, out.length());
             if (watchdog.killedProcess()) {
                 return new KimiCliResult(-1, out, "kimi CLI timed out after " + timeoutMs + " ms\n" + err);
@@ -182,8 +197,8 @@ public class KimiCliExecutor {
             // with the real exit code instead of discarding the output. The
             // deadline check makes the timeout verdict race-free even when
             // {@code watchdog.killedProcess()} has not observed the kill yet.
-            String out = stdout.toString().trim();
-            String err = stderr.toString().trim();
+            String out = decodeUtf8(stdout).trim();
+            String err = decodeUtf8(stderr).trim();
             boolean timedOut = watchdog.killedProcess()
                     || System.nanoTime() - startNanos >= timeoutMs * 1_000_000L;
             if (timedOut) {

@@ -89,6 +89,17 @@ class KimiCliExecutorTest {
     }
 
     @Test
+    void shouldDecodeUtf8OutputRegardlessOfPlatformCharset() {
+        // POSIX printf octal escapes emit 你好 as raw UTF-8 bytes; with a
+        // platform-default-charset decode this corrupts on C-locale JVMs.
+        KimiCliExecutor executor = new KimiCliExecutor(configFor("/bin/sh"));
+
+        KimiCliResult result = executor.execute("-c", "printf '\\344\\275\\240\\345\\245\\275'");
+
+        assertEquals("你好", result.getStdout());
+    }
+
+    @Test
     void shouldIgnoreNullArguments() {
         KimiCliExecutor executor = new KimiCliExecutor(configFor(ECHO));
 

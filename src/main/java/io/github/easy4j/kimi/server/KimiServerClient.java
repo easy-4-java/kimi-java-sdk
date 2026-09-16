@@ -36,9 +36,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import io.github.easy4j.kimi.KimiException;
-import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.ObjectMapper;
-import tools.jackson.databind.json.JsonMapper;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.json.JsonMapper;
 
 /**
  * Client for the Kimi web-server route ({@code kimi web}).
@@ -72,7 +72,7 @@ public class KimiServerClient implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(KimiServerClient.class);
     private static final ObjectMapper MAPPER =
-            JsonMapper.builder().disable(tools.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+            JsonMapper.builder().disable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
                     .build();
 
     private final KimiServerConfig config;

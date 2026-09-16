@@ -22,8 +22,8 @@ import java.util.Arrays;
 
 import org.junit.jupiter.api.Test;
 
-import tools.jackson.databind.ObjectMapper;
-import tools.jackson.databind.json.JsonMapper;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.json.JsonMapper;
 
 /**
  * Unit tests for {@link KimiEvent}: JSON round-trips and tolerance of

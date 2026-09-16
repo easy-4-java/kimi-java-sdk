@@ -75,8 +75,12 @@ public class KimiServerClient implements AutoCloseable {
             JsonMapper.builder().disable(tools.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
                     .build();
 
+    private static final java.util.regex.Pattern HTTP_URL =
+            java.util.regex.Pattern.compile("https?://\\S+");
+
     private final KimiServerConfig config;
     private final AtomicBoolean ownsServer = new AtomicBoolean(false);
+    private final java.util.List<String> startupOutput = new java.util.ArrayList<String>();
 
     private volatile Process process;
     private volatile String baseUrl;
@@ -119,12 +123,20 @@ public class KimiServerClient implements AutoCloseable {
             throw new KimiException("Failed to spawn kimi web: " + config.getLocalExecutable(), e);
         }
         ownsServer.set(true);
-        // Drain child output so the process never blocks on a full pipe.
+        // Drain child output so the process never blocks on a full pipe, and
+        // keep the last lines: when the configured port is busy the CLI
+        // retries on port+1 and announces the real URL on stdout.
         Thread drainer = new Thread(() -> {
             try (BufferedReader reader =
                     new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                while (reader.readLine() != null) {
-                    // discard
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    synchronized (startupOutput) {
+                        startupOutput.add(line);
+                        if (startupOutput.size() > 100) {
+                            startupOutput.remove(0);
+                        }
+                    }
                 }
             } catch (IOException e) {
                 log.debug("kimi web output drain ended: {}", e.getMessage());
@@ -147,6 +159,7 @@ public class KimiServerClient implements AutoCloseable {
                 return baseUrl;
             } catch (Exception e) {
                 lastError = e;
+                candidate = detectBaseUrl(candidate);
                 sleepQuietly(300);
             }
         }
@@ -370,6 +383,27 @@ public class KimiServerClient implements AutoCloseable {
                 connection.disconnect();
             }
         }
+    }
+
+    /**
+     * Returns the first {@code http://...} URL announced on the child's
+     * stdout that differs from {@code current}, or {@code current} when none
+     * was found. Handles the CLI's busy-port {@code +1} retry behaviour.
+     */
+    private String detectBaseUrl(String current) {
+        synchronized (startupOutput) {
+            for (String line : startupOutput) {
+                java.util.regex.Matcher matcher = HTTP_URL.matcher(line);
+                if (matcher.find()) {
+                    String url = matcher.group().replaceAll("/+$", "");
+                    if (!url.equals(current)) {
+                        log.debug("kimi web announced actual base url: {}", url);
+                        return url;
+                    }
+                }
+            }
+        }
+        return current;
     }
 
     private String readToken() {

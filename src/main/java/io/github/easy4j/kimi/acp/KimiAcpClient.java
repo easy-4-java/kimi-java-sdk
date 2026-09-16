@@ -79,6 +79,7 @@ public class KimiAcpClient implements AutoCloseable {
     private final Map<String, PromptStream> promptStreams = new ConcurrentHashMap<String, PromptStream>();
     private final AtomicLong rpcIds = new AtomicLong();
     private final AtomicBoolean closed = new AtomicBoolean(false);
+    private final AtomicBoolean connected = new AtomicBoolean(false);
     private final ScheduledExecutorService timer = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread thread = new Thread(r, "kimi-acp-timer");
         thread.setDaemon(true);
@@ -109,6 +110,13 @@ public class KimiAcpClient implements AutoCloseable {
      *                        fails or times out.
      */
     public String connect() {
+        if (closed.get()) {
+            throw new IllegalStateException("kimi acp client is closed");
+        }
+        // CAS guard: a second connect would orphan the first child process.
+        if (!connected.compareAndSet(false, true)) {
+            throw new IllegalStateException("kimi acp client is already connected");
+        }
         List<String> command = new ArrayList<String>();
         command.add(config.getLocalExecutable());
         if (config.getAcpSubcommand() != null) {
@@ -124,6 +132,7 @@ public class KimiAcpClient implements AutoCloseable {
         try {
             process = builder.start();
         } catch (IOException e) {
+            connected.set(false);
             throw new KimiException("Failed to spawn kimi acp: " + config.getLocalExecutable(), e);
         }
         stdin = new PrintWriter(new OutputStreamWriter(process.getOutputStream(), StandardCharsets.UTF_8), true);
@@ -135,14 +144,27 @@ public class KimiAcpClient implements AutoCloseable {
         params.put("protocolVersion", Integer.valueOf(1));
         Map<String, Object> clientCaps = new LinkedHashMap<String, Object>();
         params.put("clientCapabilities", clientCaps);
-        JsonNode result = await(request("initialize", params), config.getConnectTimeoutMillis(), "initialize");
-        if (result.hasNonNull("protocolVersion")) {
-            protocolVersion = result.path("protocolVersion").asText(null);
+        try {
+            JsonNode result = await(request("initialize", params), config.getConnectTimeoutMillis(), "initialize");
+            if (result.hasNonNull("protocolVersion")) {
+                protocolVersion = result.path("protocolVersion").asText(null);
+            }
+            if (result.hasNonNull("agentInfo")) {
+                agentVersion = result.path("agentInfo").path("version").asText(null);
+            }
+            return agentVersion;
+        } catch (RuntimeException e) {
+            // Handshake failure leaves the child alive — destroy it here so a
+            // discarded client cannot leak the process, and allow a retry.
+            Process current = process;
+            if (current != null) {
+                current.destroy();
+            }
+            process = null;
+            stdin = null;
+            connected.set(false);
+            throw e;
         }
-        if (result.hasNonNull("agentInfo")) {
-            agentVersion = result.path("agentInfo").path("version").asText(null);
-        }
-        return agentVersion;
     }
 
     /**

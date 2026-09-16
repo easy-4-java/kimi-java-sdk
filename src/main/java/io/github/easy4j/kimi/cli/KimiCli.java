@@ -253,6 +253,12 @@ public class KimiCli {
     }
 
     private String[] buildPromptArgs(RunOptions options) {
+        if (options.session != null && options.continueLast) {
+            // The kimi CLI rejects this combination at startup; fail here
+            // with a clear message instead.
+            throw new IllegalArgumentException(
+                    "RunOptions: --session and --continue are mutually exclusive");
+        }
         List<String> args = new ArrayList<String>();
         if (options.model != null) {
             args.add("--model");

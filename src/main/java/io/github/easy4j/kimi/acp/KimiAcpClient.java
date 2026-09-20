@@ -137,7 +137,7 @@ public class KimiAcpClient implements AutoCloseable {
             process = builder.start();
         } catch (IOException e) {
             connected.set(false);
-            state.set(KimiAcpState.NEW);
+            state.compareAndSet(KimiAcpState.CONNECTING, KimiAcpState.NEW);
             throw new KimiException("Failed to spawn kimi acp: " + config.getLocalExecutable(), e);
         }
         state.set(KimiAcpState.INITIALIZING);
@@ -158,7 +158,10 @@ public class KimiAcpClient implements AutoCloseable {
             if (result.hasNonNull("agentInfo")) {
                 agentVersion = result.path("agentInfo").path("version").asText(null);
             }
-            state.set(KimiAcpState.READY);
+            if (!state.compareAndSet(KimiAcpState.INITIALIZING, KimiAcpState.READY)) {
+                throw new KimiException("kimi acp initialize completed after lifecycle left INITIALIZING: "
+                        + state.get());
+            }
             return agentVersion;
         } catch (RuntimeException e) {
             // Handshake failure leaves the child alive — destroy it here so a
@@ -170,7 +173,7 @@ public class KimiAcpClient implements AutoCloseable {
             process = null;
             stdin = null;
             connected.set(false);
-            state.set(KimiAcpState.NEW);
+            state.compareAndSet(KimiAcpState.INITIALIZING, KimiAcpState.NEW);
             throw e;
         }
     }

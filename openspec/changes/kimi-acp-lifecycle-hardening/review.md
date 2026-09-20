@@ -123,6 +123,29 @@ CI run: `35523849358`
 
 当前状态应描述为：
 
-> **IMPLEMENTATION_IN_PROGRESS**
+> **COMPLETE / VERIFIED**
 
 而不是 COMPLETE / PRODUCTION_READY。
+
+
+## Final Verification Closure
+
+后续 canonical implementation 已继续完成 lifecycle state machine、cancel terminal guard、close/process escalation、race/resource tests，并同步到三条兼容线。
+
+最终分支与 CI 证据：
+
+- `feature/3.0.x@1b3e6ba01d58db5c416881a9504ce514d3bb73d4`
+  - CI run `35525549587`: success
+  - OpenSpec Strict Validate run `35525549589`: success
+- `feature/2.0.x@844021403014c079b05a4dcef3757d1b40054457`
+  - CI run `35526302689`: success
+- `feature/1.0.x@b300ee25a879a03113a6b3ada7a35d92e763bd75`
+  - CI run `35526321520`: success
+
+`tasks.md` 的 21 项任务均已完成并具有实现/验证证据。
+
+最终状态：
+
+> **COMPLETE / VERIFIED**
+
+该状态仅表示 `kimi-acp-lifecycle-hardening` Change 完成，不代表其它 7 个 OpenSpec Change 已完成。

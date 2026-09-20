@@ -41,11 +41,14 @@ class KimiAcpClientE2ETest {
     private static final String FAKE_AGENT = Paths.get("src", "test", "resources", "fake-acp-agent.py")
             .toAbsolutePath().toString();
 
-    private static KimiAcpConfig config() {
+    private static KimiAcpConfig config(String... flags) {
         KimiAcpConfig config = new KimiAcpConfig();
         config.setLocalExecutable("python3");
         config.setAcpSubcommand(null);
-        config.setAcpArgs(new String[] {FAKE_AGENT});
+        String[] args = new String[1 + flags.length];
+        args[0] = FAKE_AGENT;
+        System.arraycopy(flags, 0, args, 1, flags.length);
+        config.setAcpArgs(args);
         config.setConnectTimeoutMillis(10_000);
         config.setReadTimeoutMillis(10_000);
         return config;
@@ -147,5 +150,22 @@ class KimiAcpClientE2ETest {
         KimiAcpClient client = new KimiAcpClient(config);
         assertThrows(KimiException.class, client::connect);
         client.close();
+    }
+
+    @Test
+    void shouldForceTerminateOwnedProcessOnClose() throws Exception {
+        KimiAcpClient client = new KimiAcpClient(config("--ignore-term"));
+        client.connect();
+
+        java.lang.reflect.Field processField = KimiAcpClient.class.getDeclaredField("process");
+        processField.setAccessible(true);
+        Process child = (Process) processField.get(client);
+        assertTrue(child.isAlive());
+
+        client.close();
+
+        assertFalse(child.isAlive(),
+                "close must not return while its owned ACP process is still alive");
+        assertEquals(KimiAcpState.CLOSED, client.getState());
     }
 }

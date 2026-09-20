@@ -129,6 +129,55 @@ class KimiAcpLifecycleHardeningTest {
         }
     }
 
+
+    @Test
+    void shouldCompletePromptAsCancelledAndReleaseRegistries() throws Exception {
+        try (KimiAcpClient client = new KimiAcpClient(config("delay-prompt"))) {
+            client.connect();
+            String sessionId = client.newSession("/tmp");
+
+            CompletableFuture<KimiAcpTurnResult> future =
+                    client.promptAsync(sessionId, "cancel-me", null);
+            client.cancel(sessionId);
+
+            ExecutionException failure = assertThrows(ExecutionException.class,
+                    () -> future.get(1, TimeUnit.SECONDS));
+            assertTrue(failure.getCause() instanceof KimiException);
+            assertTrue(failure.getCause().getMessage().toLowerCase().contains("cancel"));
+            assertEquals(0, privateMapSize(client, "pendingRpcs"));
+            assertEquals(0, privateMapSize(client, "promptStreams"));
+        }
+    }
+
+    @Test
+    void shouldRemoveTimedOutRpcFromPendingRegistry() throws Exception {
+        KimiAcpConfig config = config("hang-list");
+        config.setConnectTimeoutMillis(250);
+        try (KimiAcpClient client = new KimiAcpClient(config)) {
+            client.connect();
+
+            assertThrows(KimiException.class, client::listSessions);
+            assertEquals(0, privateMapSize(client, "pendingRpcs"),
+                    "timed out RPC must be removed from the pending registry");
+        }
+    }
+
+    @Test
+    void shouldFailAndCleanPendingPromptWhenClientCloses() throws Exception {
+        KimiAcpClient client = new KimiAcpClient(config("delay-prompt"));
+        client.connect();
+        String sessionId = client.newSession("/tmp");
+        CompletableFuture<KimiAcpTurnResult> future =
+                client.promptAsync(sessionId, "close-me", null);
+
+        client.close();
+
+        assertThrows(ExecutionException.class, () -> future.get(1, TimeUnit.SECONDS));
+        assertEquals(0, privateMapSize(client, "pendingRpcs"));
+        assertEquals(0, privateMapSize(client, "promptStreams"));
+        client.close();
+    }
+
     @SuppressWarnings("unchecked")
     private static int privateMapSize(KimiAcpClient client, String fieldName) throws Exception {
         Field field = KimiAcpClient.class.getDeclaredField(fieldName);

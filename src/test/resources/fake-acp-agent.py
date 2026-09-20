@@ -6,6 +6,7 @@ Optional first argument selects behavior:
   delay-prompt     hold a prompt open long enough to test same-session admission
   malformed-prompt emit malformed JSON then stay alive
   exit-on-prompt   exit the process while a prompt is pending
+  hang-list        never answer session/list
 """
 import json
 import sys
@@ -69,6 +70,8 @@ def main():
             reply(req_id, {"sessionId": params.get("sessionId", "sess_fake")})
         elif method == "session/fork":
             reply(req_id, {"sessionId": "sess_forked"})
+        elif method == "session/list" and MODE == "hang-list":
+            time.sleep(5)
         elif method in ("session/list", "session/set_mode", "session/set_model",
                         "authenticate", "logout", "session/close", "session/delete"):
             reply(req_id, {})

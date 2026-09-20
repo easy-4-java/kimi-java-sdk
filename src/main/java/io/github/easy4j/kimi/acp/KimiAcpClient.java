@@ -71,6 +71,7 @@ import tools.jackson.databind.json.JsonMapper;
 public class KimiAcpClient implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(KimiAcpClient.class);
+    private static final long CLOSE_GRACE_MILLIS = 1_000L;
 
     private final KimiAcpConfig config;
     private final ObjectMapper mapper =
@@ -468,11 +469,9 @@ public class KimiAcpClient implements AutoCloseable {
         state.set(KimiAcpState.CLOSING);
         connected.set(false);
         timer.shutdownNow();
-        Process current = process;
-        if (current != null) {
-            current.destroy();
-        }
         failAllPending(new KimiException("kimi acp client closed"));
+        terminateOwnedProcess(process);
+        awaitTimerTermination();
         state.set(KimiAcpState.CLOSED);
     }
 
@@ -666,9 +665,36 @@ public class KimiAcpClient implements AutoCloseable {
             state.compareAndSet(KimiAcpState.READY, KimiAcpState.FAILED);
         }
         failAllPending(error);
-        Process current = process;
-        if (current != null) {
-            current.destroy();
+        terminateOwnedProcess(process);
+    }
+
+    private void terminateOwnedProcess(Process current) {
+        if (current == null || !current.isAlive()) {
+            return;
+        }
+        current.destroy();
+        try {
+            if (!current.waitFor(CLOSE_GRACE_MILLIS, TimeUnit.MILLISECONDS)) {
+                current.destroyForcibly();
+                if (!current.waitFor(CLOSE_GRACE_MILLIS, TimeUnit.MILLISECONDS)) {
+                    throw new KimiException("kimi acp child process did not terminate after forced shutdown");
+                }
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            current.destroyForcibly();
+            throw new KimiException("kimi acp process shutdown interrupted", e);
+        }
+    }
+
+    private void awaitTimerTermination() {
+        try {
+            if (!timer.awaitTermination(CLOSE_GRACE_MILLIS, TimeUnit.MILLISECONDS)) {
+                log.warn("kimi acp timer did not terminate within {} ms", CLOSE_GRACE_MILLIS);
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("Interrupted while waiting for kimi acp timer shutdown");
         }
     }
 

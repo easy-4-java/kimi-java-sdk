@@ -12,12 +12,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.Test;
@@ -218,6 +220,72 @@ class KimiAcpLifecycleHardeningTest {
             assertEquals("NEW", lifecycleState(client),
                     "spawn/initialize failure remains retryable on the same client");
         }
+    }
+
+
+    @Test
+    void shouldCleanPromptRegistriesAfterPromptTimeout() throws Exception {
+        KimiAcpConfig config = config("hang-prompt");
+        config.setReadTimeoutMillis(200);
+        try (KimiAcpClient client = new KimiAcpClient(config)) {
+            client.connect();
+            String sessionId = client.newSession("/tmp");
+
+            CompletableFuture<KimiAcpTurnResult> future =
+                    client.promptAsync(sessionId, "timeout", null);
+
+            ExecutionException failure = assertThrows(ExecutionException.class,
+                    () -> future.get(2, TimeUnit.SECONDS));
+            assertTrue(failure.getCause() instanceof KimiException);
+            assertTrue(failure.getCause().getMessage().toLowerCase().contains("timed out"));
+            assertEquals(0, privateMapSize(client, "pendingRpcs"));
+            assertEquals(0, privateMapSize(client, "promptStreams"));
+        }
+    }
+
+    @Test
+    void shouldKeepConcurrentSessionsIsolated() throws Exception {
+        try (KimiAcpClient client = new KimiAcpClient(config("concurrent-prompts"))) {
+            client.connect();
+
+            List<String> firstDeltas = java.util.Collections.synchronizedList(new ArrayList<String>());
+            List<String> secondDeltas = java.util.Collections.synchronizedList(new ArrayList<String>());
+
+            CompletableFuture<KimiAcpTurnResult> first =
+                    client.promptAsync("session-A", "A", firstDeltas::add);
+            CompletableFuture<KimiAcpTurnResult> second =
+                    client.promptAsync("session-B", "B", secondDeltas::add);
+
+            KimiAcpTurnResult firstResult = first.get(2, TimeUnit.SECONDS);
+            KimiAcpTurnResult secondResult = second.get(2, TimeUnit.SECONDS);
+
+            assertEquals("A-1A-2", firstResult.getContent());
+            assertEquals("B-1B-2", secondResult.getContent());
+            assertEquals(java.util.Arrays.asList("A-1", "A-2"), firstDeltas);
+            assertEquals(java.util.Arrays.asList("B-1", "B-2"), secondDeltas);
+            assertEquals(0, privateMapSize(client, "promptStreams"));
+        }
+    }
+
+    @Test
+    void shouldForceTerminateStubbornOwnedProcessOnClose() throws Exception {
+        KimiAcpClient client = new KimiAcpClient(config("stubborn-close"));
+        client.connect();
+        Process child = privateProcess(client);
+        assertTrue(child.isAlive());
+
+        client.close();
+
+        assertTrue(child.waitFor(1, TimeUnit.SECONDS),
+                "close must force-terminate an owned ACP process that ignores graceful termination");
+        assertTrue(!child.isAlive());
+        assertEquals("CLOSED", lifecycleState(client));
+    }
+
+    private static Process privateProcess(KimiAcpClient client) throws Exception {
+        Field field = KimiAcpClient.class.getDeclaredField("process");
+        field.setAccessible(true);
+        return (Process) field.get(client);
     }
 
     private static String lifecycleState(KimiAcpClient client) throws Exception {

@@ -7,18 +7,28 @@ Optional first argument selects behavior:
   malformed-prompt emit malformed JSON then stay alive
   exit-on-prompt   exit the process while a prompt is pending
   hang-list        never answer session/list
+  hang-prompt      never answer session/prompt
+  concurrent-prompts answer two sessions from background threads
+  stubborn-close   ignore SIGTERM and stay alive after stdin EOF
 """
 import json
 import sys
 import time
+import signal
+import threading
 
 
 MODE = sys.argv[1] if len(sys.argv) > 1 else "normal"
+WRITE_LOCK = threading.Lock()
+
+if MODE == "stubborn-close":
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
 
 
 def send(payload):
-    sys.stdout.write(json.dumps(payload, ensure_ascii=False) + "\n")
-    sys.stdout.flush()
+    with WRITE_LOCK:
+        sys.stdout.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        sys.stdout.flush()
 
 
 def reply(req_id, result):
@@ -43,7 +53,25 @@ def send_normal_prompt(session_id, req_id):
     reply(req_id, {"stopReason": "end_turn"})
 
 
+def send_concurrent_prompt(session_id, req_id):
+    if session_id.endswith("A"):
+        time.sleep(0.08)
+        pieces = ["A-1", "A-2"]
+    else:
+        time.sleep(0.02)
+        pieces = ["B-1", "B-2"]
+    for piece in pieces:
+        send({"jsonrpc": "2.0", "method": "session/update", "params": {
+            "sessionId": session_id,
+            "update": {"sessionUpdate": "agent_message_chunk",
+                       "content": {"type": "text", "text": piece}},
+        }})
+        time.sleep(0.01)
+    reply(req_id, {"stopReason": "end_turn"})
+
+
 def main():
+    workers = []
     for line in sys.stdin:
         line = line.strip()
         if not line:
@@ -86,6 +114,14 @@ def main():
                 time.sleep(5)
             elif MODE == "exit-on-prompt":
                 sys.exit(7)
+            elif MODE == "hang-prompt":
+                time.sleep(5)
+            elif MODE == "concurrent-prompts":
+                worker = threading.Thread(target=send_concurrent_prompt,
+                                          args=(session_id, req_id))
+                worker.daemon = True
+                worker.start()
+                workers.append(worker)
             else:
                 send_normal_prompt(session_id, req_id)
         elif method == "session/cancel":
@@ -93,6 +129,13 @@ def main():
         elif req_id is not None:
             send({"jsonrpc": "2.0", "id": req_id,
                   "error": {"code": -32601, "message": "method not found: " + method}})
+
+    for worker in workers:
+        worker.join(timeout=1)
+
+    if MODE == "stubborn-close":
+        while True:
+            time.sleep(1)
 
 
 if __name__ == "__main__":

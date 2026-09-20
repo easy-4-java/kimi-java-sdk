@@ -5,6 +5,7 @@ Speaks newline-delimited JSON-RPC on stdio exactly like `kimi acp`.
 Optional modes are used to exercise lifecycle races:
   --slow-prompt             delay prompt completion so a second turn can race
   --exit-after-initialize   exit immediately after initialize succeeds
+  --slow-initialize         delay initialize so close/connect can race
   --malformed-on-list       emit invalid JSON instead of a session/list reply
 """
 import json
@@ -38,6 +39,8 @@ def main():
         params = frame.get("params") or {}
 
         if method == "initialize":
+            if "--slow-initialize" in MODES:
+                time.sleep(0.5)
             reply(req_id, {
                 "protocolVersion": 1,
                 "agentInfo": {"name": "FakeKimi", "version": "0.0.0-test"},

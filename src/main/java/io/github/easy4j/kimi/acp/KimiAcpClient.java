@@ -326,6 +326,7 @@ public class KimiAcpClient implements AutoCloseable {
             String stopReason = firstText(node, "stopReason", "stop_reason");
             return new KimiAcpTurnResult(sessionId, stopReason, stream.content());
         });
+        stream.bind(future);
         scheduleTimeout(future, config.getReadTimeoutMillis(), "session/prompt turn");
         future.whenComplete((r, error) -> {
             promptStreams.remove(sessionId, stream);
@@ -372,6 +373,10 @@ public class KimiAcpClient implements AutoCloseable {
         Map<String, Object> params = new LinkedHashMap<String, Object>();
         params.put("sessionId", sessionId);
         notify("session/cancel", params);
+        PromptStream stream = promptStreams.get(sessionId);
+        if (stream != null) {
+            stream.cancel();
+        }
     }
 
     /**
@@ -665,13 +670,28 @@ public class KimiAcpClient implements AutoCloseable {
      */
     private final class PromptStream {
 
+        private final String sessionId;
         private final StringBuilder content = new StringBuilder();
         private final Consumer<String> onDelta;
         private boolean truncationWarned;
         private volatile RuntimeException callbackFailure;
+        private volatile CompletableFuture<KimiAcpTurnResult> turnFuture;
 
         PromptStream(String sessionId, Consumer<String> onDelta) {
+            this.sessionId = sessionId;
             this.onDelta = onDelta;
+        }
+
+        void bind(CompletableFuture<KimiAcpTurnResult> future) {
+            this.turnFuture = future;
+        }
+
+        void cancel() {
+            CompletableFuture<KimiAcpTurnResult> future = turnFuture;
+            if (future != null) {
+                future.completeExceptionally(
+                        new KimiException("kimi acp prompt cancelled: " + sessionId));
+            }
         }
 
         void append(String text) {

@@ -90,6 +90,24 @@ class KimiAcpClientE2ETest {
     }
 
     @Test
+    void shouldKeepClosedTerminalWhenCloseRacesInitialize() throws Exception {
+        KimiAcpClient client = new KimiAcpClient(config("--slow-initialize"));
+        CompletableFuture<String> connecting = CompletableFuture.supplyAsync(client::connect);
+
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+        while (client.getState() != KimiAcpState.INITIALIZING && System.nanoTime() < deadline) {
+            Thread.sleep(10);
+        }
+        assertEquals(KimiAcpState.INITIALIZING, client.getState());
+
+        client.close();
+
+        assertThrows(ExecutionException.class, () -> connecting.get(2, TimeUnit.SECONDS));
+        assertEquals(KimiAcpState.CLOSED, client.getState(),
+                "CLOSED must remain terminal even when the connect failure unwinds later");
+    }
+
+    @Test
     void shouldConnectAndInitialize() {
         try (KimiAcpClient client = new KimiAcpClient(config())) {
             String version = client.connect();

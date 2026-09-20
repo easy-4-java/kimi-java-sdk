@@ -14,7 +14,6 @@ import signal
 import sys
 import time
 
-
 MODES = set(sys.argv[1:])
 
 if "--ignore-term" in MODES:

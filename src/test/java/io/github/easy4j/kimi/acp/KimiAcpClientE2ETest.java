@@ -63,6 +63,32 @@ class KimiAcpClientE2ETest {
     }
 
     @Test
+    void shouldExposeLifecycleStateTransitions() {
+        KimiAcpClient client = new KimiAcpClient(config());
+        assertEquals(KimiAcpState.NEW, client.getState());
+
+        client.connect();
+        assertEquals(KimiAcpState.READY, client.getState());
+
+        client.close();
+        assertEquals(KimiAcpState.CLOSED, client.getState());
+    }
+
+    @Test
+    void shouldReturnToNewAfterSpawnFailure() {
+        KimiAcpConfig config = config();
+        config.setLocalExecutable("/nonexistent/kimi");
+        KimiAcpClient client = new KimiAcpClient(config);
+
+        assertEquals(KimiAcpState.NEW, client.getState());
+        assertThrows(KimiException.class, client::connect);
+        assertEquals(KimiAcpState.NEW, client.getState(),
+                "a spawn failure before transport ownership must remain retryable");
+        client.close();
+        assertEquals(KimiAcpState.CLOSED, client.getState());
+    }
+
+    @Test
     void shouldConnectAndInitialize() {
         try (KimiAcpClient client = new KimiAcpClient(config())) {
             String version = client.connect();
@@ -190,6 +216,8 @@ class KimiAcpClientE2ETest {
             assertTrue(error.getMessage().contains("protocol")
                             || error.getMessage().contains("malformed"),
                     "malformed transport data must fail as a protocol error, not a timeout");
+            assertEquals(KimiAcpState.FAILED, client.getState(),
+                    "fatal protocol corruption must leave the transport in FAILED");
         }
     }
 

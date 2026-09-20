@@ -179,6 +179,21 @@ class KimiAcpClientE2ETest {
     }
 
     @Test
+    void shouldFailPendingRpcOnMalformedFrame() {
+        KimiAcpConfig config = config("--malformed-on-list");
+        config.setConnectTimeoutMillis(1_000);
+        try (KimiAcpClient client = new KimiAcpClient(config)) {
+            client.connect();
+
+            KimiException error = assertThrows(KimiException.class, client::listSessions);
+
+            assertTrue(error.getMessage().contains("protocol")
+                            || error.getMessage().contains("malformed"),
+                    "malformed transport data must fail as a protocol error, not a timeout");
+        }
+    }
+
+    @Test
     void shouldKeepTransportUsableWhenDeltaCallbackThrows() {
         KimiAcpConfig config = config();
         config.setReadTimeoutMillis(750);

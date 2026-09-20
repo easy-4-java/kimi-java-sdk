@@ -24,6 +24,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.Test;
 
@@ -48,6 +50,15 @@ class KimiAcpClientE2ETest {
         config.setAcpArgs(new String[] {FAKE_AGENT});
         config.setConnectTimeoutMillis(10_000);
         config.setReadTimeoutMillis(10_000);
+        return config;
+    }
+
+    private static KimiAcpConfig config(String... modes) {
+        KimiAcpConfig config = config();
+        String[] args = new String[modes.length + 1];
+        args[0] = FAKE_AGENT;
+        System.arraycopy(modes, 0, args, 1, modes.length);
+        config.setAcpArgs(args);
         return config;
     }
 
@@ -147,5 +158,41 @@ class KimiAcpClientE2ETest {
         KimiAcpClient client = new KimiAcpClient(config);
         assertThrows(KimiException.class, client::connect);
         client.close();
+    }
+
+    @Test
+    void shouldRejectSecondActivePromptOnSameSession() throws Exception {
+        KimiAcpConfig config = config("--slow-prompt");
+        config.setReadTimeoutMillis(5_000);
+        try (KimiAcpClient client = new KimiAcpClient(config)) {
+            client.connect();
+            String sessionId = client.newSession("/tmp");
+
+            CompletableFuture<KimiAcpTurnResult> first = client.promptAsync(sessionId, "first", null);
+
+            assertThrows(KimiException.class,
+                    () -> client.promptAsync(sessionId, "second", null),
+                    "a second active turn must not overwrite the first session stream");
+
+            assertEquals("end_turn", first.get(5, TimeUnit.SECONDS).getStopReason());
+        }
+    }
+
+    @Test
+    void shouldKeepTransportUsableWhenDeltaCallbackThrows() {
+        KimiAcpConfig config = config();
+        config.setReadTimeoutMillis(750);
+        try (KimiAcpClient client = new KimiAcpClient(config)) {
+            client.connect();
+            String sessionId = client.newSession("/tmp");
+
+            assertThrows(KimiException.class,
+                    () -> client.prompt(sessionId, "callback failure", delta -> {
+                        throw new IllegalStateException("listener boom");
+                    }));
+
+            assertNotNull(client.listSessions(),
+                    "a user callback failure must not terminate the ACP reader transport");
+        }
     }
 }

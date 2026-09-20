@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 """Fake Kimi ACP agent for end-to-end tests.
 
-Speaks newline-delimited JSON-RPC on stdio exactly like `kimi acp`:
-answers `initialize`, `session/new`, `session/list`, `session/fork`,
-`session/load`, `session/resume`, `session/close`, `session/delete`,
-`authenticate`, `logout`, `session/set_model`, `session/set_mode`; on
-`session/prompt` streams a few `session/update` notifications (one unknown
-kind, one agent_message_chunk, another agent_message_chunk) and answers with
-stop_reason `end_turn`. `session/cancel` notifications are ignored.
+Speaks newline-delimited JSON-RPC on stdio exactly like `kimi acp`.
+Optional modes are used to exercise lifecycle races:
+  --slow-prompt             delay prompt completion so a second turn can race
+  --exit-after-initialize   exit immediately after initialize succeeds
 """
 import json
 import sys
+import time
+
+
+MODES = set(sys.argv[1:])
 
 
 def send(payload):
@@ -42,6 +43,8 @@ def main():
                 "agentCapabilities": {"loadSession": True},
                 "authMethods": [{"type": "terminal", "id": "login"}],
             })
+            if "--exit-after-initialize" in MODES:
+                return
         elif method == "session/new":
             reply(req_id, {"sessionId": "sess_fake", "configOptions": [], "modes": {}})
         elif method in ("session/load", "session/resume"):
@@ -52,6 +55,8 @@ def main():
                         "authenticate", "logout", "session/close", "session/delete"):
             reply(req_id, {})
         elif method == "session/prompt":
+            if "--slow-prompt" in MODES:
+                time.sleep(0.5)
             session_id = params.get("sessionId", "sess_fake")
             send({"jsonrpc": "2.0", "method": "session/update", "params": {
                 "sessionId": session_id,

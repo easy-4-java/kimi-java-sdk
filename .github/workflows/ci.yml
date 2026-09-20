@@ -4,7 +4,8 @@
 #   - push / pull_request on the feature/3.0.x branch
 #   - manual workflow_dispatch
 #
-# Runs `./mvnw -B clean verify` (Maven 4 via the checked-in wrapper — the
+# Runs OpenSpec strict validation for all active changes, then
+# `./mvnw -B clean verify` (Maven 4 via the checked-in wrapper — the
 # runner's bundled Maven 3 cannot parse the POM 4.1.0 model) which includes
 # the JaCoCo coverage gate (90% line coverage, haltOnFailure=false).
 name: CI
@@ -27,6 +28,35 @@ jobs:
     steps:
       - name: Checkout source
         uses: actions/checkout@v7
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      - name: Install OpenSpec CLI
+        run: npm install --global @fission-ai/openspec@1.13.1
+
+      - name: Validate OpenSpec changes strictly
+        shell: bash
+        run: |
+          set -euo pipefail
+          openspec --version
+          changes=(
+            kimi-runtime-foundation
+            kimi-acp-lifecycle-hardening
+            kimi-typed-protocol
+            kimi-unified-events
+            kimi-server-websocket
+            kimi-process-hardening
+            kimi-observability
+            kimi-branch-parity
+          )
+          for change in "${changes[@]}"; do
+            echo "::group::openspec validate ${change} --strict"
+            openspec validate "${change}" --type change --strict --no-interactive
+            echo "::endgroup::"
+          done
 
       - name: Set up JDK 21
         uses: actions/setup-java@v5

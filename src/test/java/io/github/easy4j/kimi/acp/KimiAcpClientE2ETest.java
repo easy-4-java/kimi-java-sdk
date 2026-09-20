@@ -25,6 +25,7 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.Test;
@@ -201,6 +202,28 @@ class KimiAcpClientE2ETest {
                     "a second active turn must not overwrite the first session stream");
 
             assertEquals("end_turn", first.get(5, TimeUnit.SECONDS).getStopReason());
+        }
+    }
+
+    @Test
+    void shouldCompleteActivePromptAsCancelled() throws Exception {
+        KimiAcpConfig config = config("--slow-prompt");
+        config.setReadTimeoutMillis(5_000);
+        try (KimiAcpClient client = new KimiAcpClient(config)) {
+            client.connect();
+
+            CompletableFuture<KimiAcpTurnResult> future =
+                    client.promptAsync("sess_cancel", "cancel me", null);
+            client.cancel("sess_cancel");
+
+            ExecutionException error = assertThrows(ExecutionException.class,
+                    () -> future.get(1, TimeUnit.SECONDS));
+            assertTrue(error.getCause() instanceof KimiException);
+            assertTrue(error.getCause().getMessage().contains("cancel"),
+                    "cancel must win the active turn when it completes first");
+
+            assertNotNull(client.listSessions(),
+                    "cancelling one turn must keep the ACP transport usable");
         }
     }
 

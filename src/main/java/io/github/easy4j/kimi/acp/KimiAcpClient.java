@@ -712,12 +712,14 @@ public class KimiAcpClient implements AutoCloseable {
     private final class PromptStream {
 
         private final StringBuilder content = new StringBuilder();
+        private final String sessionId;
         private final Consumer<String> onDelta;
         private volatile RuntimeException callbackFailure;
         private volatile CompletableFuture<KimiAcpTurnResult> turnFuture;
         private boolean truncationWarned;
 
         PromptStream(String sessionId, Consumer<String> onDelta) {
+            this.sessionId = sessionId;
             this.onDelta = onDelta;
         }
 
@@ -729,17 +731,8 @@ public class KimiAcpClient implements AutoCloseable {
             CompletableFuture<KimiAcpTurnResult> future = turnFuture;
             if (future != null) {
                 future.completeExceptionally(new KimiException(
-                        "kimi acp session/prompt cancelled: " + sessionId()));
+                        "kimi acp session/prompt cancelled: " + sessionId));
             }
-        }
-
-        private String sessionId() {
-            for (Map.Entry<String, PromptStream> entry : promptStreams.entrySet()) {
-                if (entry.getValue() == this) {
-                    return entry.getKey();
-                }
-            }
-            return "unknown";
         }
 
         void append(String text) {

@@ -11,6 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
@@ -176,6 +177,52 @@ class KimiAcpLifecycleHardeningTest {
         assertEquals(0, privateMapSize(client, "pendingRpcs"));
         assertEquals(0, privateMapSize(client, "promptStreams"));
         client.close();
+    }
+
+
+    @Test
+    void shouldExposeLifecycleStateTransitions() throws Exception {
+        KimiAcpClient client = new KimiAcpClient(config("normal"));
+        assertEquals("NEW", lifecycleState(client));
+
+        client.connect();
+        assertEquals("READY", lifecycleState(client));
+
+        client.close();
+        assertEquals("CLOSED", lifecycleState(client));
+    }
+
+    @Test
+    void shouldMarkTransportFailedAndRejectNewRpcAfterMalformedFrame() throws Exception {
+        try (KimiAcpClient client = new KimiAcpClient(config("malformed-prompt"))) {
+            client.connect();
+            String sessionId = client.newSession("/tmp");
+
+            CompletableFuture<KimiAcpTurnResult> future =
+                    client.promptAsync(sessionId, "bad-frame-state", null);
+            assertThrows(ExecutionException.class, () -> future.get(2, TimeUnit.SECONDS));
+
+            assertEquals("FAILED", lifecycleState(client));
+            assertThrows(KimiException.class, client::listSessions,
+                    "a failed transport must reject new RPCs before registration");
+            assertEquals(0, privateMapSize(client, "pendingRpcs"));
+        }
+    }
+
+    @Test
+    void shouldReturnToNewAfterRecoverableConnectFailure() throws Exception {
+        KimiAcpConfig bad = config("normal");
+        bad.setLocalExecutable("/nonexistent/kimi");
+        try (KimiAcpClient client = new KimiAcpClient(bad)) {
+            assertThrows(KimiException.class, client::connect);
+            assertEquals("NEW", lifecycleState(client),
+                    "spawn/initialize failure remains retryable on the same client");
+        }
+    }
+
+    private static String lifecycleState(KimiAcpClient client) throws Exception {
+        Method method = KimiAcpClient.class.getMethod("getState");
+        return String.valueOf(method.invoke(client));
     }
 
     @SuppressWarnings("unchecked")

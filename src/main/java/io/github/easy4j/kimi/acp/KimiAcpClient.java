@@ -474,6 +474,16 @@ public class KimiAcpClient implements AutoCloseable {
         process = null;
         if (current != null) {
             current.destroy();
+            // A child that ignores SIGTERM must not outlive the client —
+            // escalate to destroyForcibly (SIGKILL) after a short grace period.
+            try {
+                if (!current.waitFor(500, TimeUnit.MILLISECONDS)) {
+                    current.destroyForcibly();
+                }
+            } catch (InterruptedException e) {
+                current.destroyForcibly();
+                Thread.currentThread().interrupt();
+            }
         }
         failAllPending(new KimiException("kimi acp client closed"));
         state.set(KimiAcpState.CLOSED);

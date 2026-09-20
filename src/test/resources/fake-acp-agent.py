@@ -6,14 +6,19 @@ Optional modes are used to exercise lifecycle races:
   --slow-prompt             delay prompt completion so a second turn can race
   --exit-after-initialize   exit immediately after initialize succeeds
   --slow-initialize         delay initialize so close/connect can race
+  --ignore-term             ignore SIGTERM so close must escalate
   --malformed-on-list       emit invalid JSON instead of a session/list reply
 """
 import json
+import signal
 import sys
 import time
 
 
 MODES = set(sys.argv[1:])
+
+if "--ignore-term" in MODES:
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
 
 
 def send(payload):

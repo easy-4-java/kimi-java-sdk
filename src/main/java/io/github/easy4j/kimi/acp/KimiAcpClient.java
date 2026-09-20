@@ -34,6 +34,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 import org.slf4j.Logger;
@@ -80,6 +81,8 @@ public class KimiAcpClient implements AutoCloseable {
     private final AtomicLong rpcIds = new AtomicLong();
     private final AtomicBoolean closed = new AtomicBoolean(false);
     private final AtomicBoolean connected = new AtomicBoolean(false);
+    private final AtomicReference<KimiAcpState> state =
+            new AtomicReference<KimiAcpState>(KimiAcpState.NEW);
     private final ScheduledExecutorService timer = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread thread = new Thread(r, "kimi-acp-timer");
         thread.setDaemon(true);
@@ -113,10 +116,11 @@ public class KimiAcpClient implements AutoCloseable {
         if (closed.get()) {
             throw new IllegalStateException("kimi acp client is closed");
         }
-        // CAS guard: a second connect would orphan the first child process.
-        if (!connected.compareAndSet(false, true)) {
-            throw new IllegalStateException("kimi acp client is already connected");
+        if (!state.compareAndSet(KimiAcpState.NEW, KimiAcpState.CONNECTING)) {
+            throw new IllegalStateException("kimi acp client is not connectable from state " + state.get());
         }
+        // Keep the legacy connected flag aligned while callers migrate to getState().
+        connected.set(true);
         List<String> command = new ArrayList<String>();
         command.add(config.getLocalExecutable());
         if (config.getAcpSubcommand() != null) {
@@ -133,8 +137,10 @@ public class KimiAcpClient implements AutoCloseable {
             process = builder.start();
         } catch (IOException e) {
             connected.set(false);
+            state.set(KimiAcpState.NEW);
             throw new KimiException("Failed to spawn kimi acp: " + config.getLocalExecutable(), e);
         }
+        state.set(KimiAcpState.INITIALIZING);
         stdin = new PrintWriter(new OutputStreamWriter(process.getOutputStream(), StandardCharsets.UTF_8), true);
         Thread reader = new Thread(this::readLoop, "kimi-acp-reader");
         reader.setDaemon(true);
@@ -152,6 +158,7 @@ public class KimiAcpClient implements AutoCloseable {
             if (result.hasNonNull("agentInfo")) {
                 agentVersion = result.path("agentInfo").path("version").asText(null);
             }
+            state.set(KimiAcpState.READY);
             return agentVersion;
         } catch (RuntimeException e) {
             // Handshake failure leaves the child alive — destroy it here so a
@@ -163,6 +170,7 @@ public class KimiAcpClient implements AutoCloseable {
             process = null;
             stdin = null;
             connected.set(false);
+            state.set(KimiAcpState.NEW);
             throw e;
         }
     }
@@ -432,6 +440,15 @@ public class KimiAcpClient implements AutoCloseable {
     }
 
     /**
+     * Returns the current observable ACP lifecycle state.
+     *
+     * @return the current state; never {@code null}.
+     */
+    public KimiAcpState getState() {
+        return state.get();
+    }
+
+    /**
      * Terminates the {@code kimi acp} child process and releases the timer.
      * Idempotent.
      */
@@ -440,12 +457,15 @@ public class KimiAcpClient implements AutoCloseable {
         if (!closed.compareAndSet(false, true)) {
             return;
         }
+        state.set(KimiAcpState.CLOSING);
+        connected.set(false);
         timer.shutdownNow();
         Process current = process;
         if (current != null) {
             current.destroy();
         }
         failAllPending(new KimiException("kimi acp client closed"));
+        state.set(KimiAcpState.CLOSED);
     }
 
     // ============================================================
@@ -453,6 +473,7 @@ public class KimiAcpClient implements AutoCloseable {
     // ============================================================
 
     private CompletableFuture<JsonNode> request(String method, Map<String, Object> params) {
+        requireRequestState(method);
         long id = rpcIds.incrementAndGet();
         Map<String, Object> payload = new LinkedHashMap<String, Object>();
         payload.put("jsonrpc", "2.0");
@@ -473,6 +494,7 @@ public class KimiAcpClient implements AutoCloseable {
     }
 
     private void notify(String method, Map<String, Object> params) {
+        requireReady();
         Map<String, Object> payload = new LinkedHashMap<String, Object>();
         payload.put("jsonrpc", "2.0");
         payload.put("method", method);
@@ -517,16 +539,17 @@ public class KimiAcpClient implements AutoCloseable {
                     KimiException error = new KimiException(
                             "kimi acp frame exceeded maxFrameChars=" + config.getMaxFrameChars());
                     log.warn("kimi acp frame over cap, tearing transport down");
-                    failAllPending(error);
-                    process.destroy();
+                    failTransport(error);
                     return;
                 }
                 handleFrame(line);
             }
-            failAllPending(new KimiException("kimi acp stdout closed (child exited)"));
+            if (!closed.get()) {
+                failTransport(new KimiException("kimi acp stdout closed (child exited)"));
+            }
         } catch (IOException e) {
             if (!closed.get()) {
-                failAllPending(new KimiException("kimi acp stdout read failed", e));
+                failTransport(new KimiException("kimi acp stdout read failed", e));
             }
         }
     }
@@ -538,12 +561,7 @@ public class KimiAcpClient implements AutoCloseable {
         } catch (Exception ex) {
             KimiException error = new KimiException("kimi acp protocol malformed JSON frame", ex);
             log.warn("kimi acp malformed JSON frame, tearing transport down");
-            failAllPending(error);
-            connected.set(false);
-            Process current = process;
-            if (current != null) {
-                current.destroy();
-            }
+            failTransport(error);
             return;
         }
         if (node.hasNonNull("id")) {
@@ -613,6 +631,36 @@ public class KimiAcpClient implements AutoCloseable {
                 throw (RuntimeException) cause;
             }
             throw new KimiException("kimi acp " + what + " failed", cause);
+        }
+    }
+
+    private void requireRequestState(String method) {
+        KimiAcpState current = state.get();
+        if ("initialize".equals(method) && current == KimiAcpState.INITIALIZING) {
+            return;
+        }
+        if (current != KimiAcpState.READY) {
+            throw new KimiException("kimi acp client is not ready: state=" + current);
+        }
+    }
+
+    private void requireReady() {
+        KimiAcpState current = state.get();
+        if (current != KimiAcpState.READY) {
+            throw new KimiException("kimi acp client is not ready: state=" + current);
+        }
+    }
+
+    private void failTransport(KimiException error) {
+        KimiAcpState currentState = state.get();
+        connected.set(false);
+        if (currentState == KimiAcpState.READY) {
+            state.compareAndSet(KimiAcpState.READY, KimiAcpState.FAILED);
+        }
+        failAllPending(error);
+        Process current = process;
+        if (current != null) {
+            current.destroy();
         }
     }
 

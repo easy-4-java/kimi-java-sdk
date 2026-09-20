@@ -5,6 +5,7 @@ Speaks newline-delimited JSON-RPC on stdio exactly like `kimi acp`.
 Optional modes are used to exercise lifecycle races:
   --slow-prompt             delay prompt completion so a second turn can race
   --exit-after-initialize   exit immediately after initialize succeeds
+  --malformed-on-list       emit invalid JSON instead of a session/list reply
 """
 import json
 import sys
@@ -51,6 +52,10 @@ def main():
             reply(req_id, {"sessionId": params.get("sessionId", "sess_fake")})
         elif method == "session/fork":
             reply(req_id, {"sessionId": "sess_forked"})
+        elif method == "session/list" and "--malformed-on-list" in MODES:
+            sys.stdout.write("{not-json}\\n")
+            sys.stdout.flush()
+            time.sleep(2)
         elif method in ("session/list", "session/set_mode", "session/set_model",
                         "authenticate", "logout", "session/close", "session/delete"):
             reply(req_id, {})

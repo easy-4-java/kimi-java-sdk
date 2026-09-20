@@ -1,0 +1,26 @@
+schema: spec-driven
+context: |
+  项目：easy-4-java/kimi-java-sdk，纯 Java、Maven，无 Spring 强依赖。
+  维护 feature/1.0.x、feature/2.0.x、feature/3.0.x 三条 Java 兼容线：
+  1.0.x = Java 8 + Jackson 2.18；2.0.x = Java 17 + Jackson 2.22；3.0.x = Java 21 + Jackson 3.x。
+  三条分支是运行时兼容线，不是功能版本；除 Java/Jackson/Maven/JUnit 等兼容适配外，Public API、协议语义、
+  Runtime 能力、异常语义与可观察行为必须保持一致。
+  当前 SDK 有三条执行路径：CLI 子进程、ACP JSON-RPC/stdin-stdout 长连接、kimi web HTTP Server。
+  正文使用简体中文；OpenSpec 结构标记及 SHALL/MUST 保留英文。
+  先形成可评审规范，再严格 TDD 实施；文件存在、代码存在、测试文件存在均不代表批准或实现完成。
+rules:
+  proposal:
+    - 标明固定源码基线、范围、非目标、依赖、兼容影响、branch_support 与批准状态。
+    - 没有主规范时，首次纳管能力使用 New Capabilities 和 ADDED，不伪造 MODIFIED 基线。
+  specs:
+    - 每个 Requirement 正文必须含 SHALL 或 MUST，且至少有一个 WHEN/THEN Scenario。
+    - 只规定可观察行为；具体类名、线程模型、库选择和算法放入 design.md。
+    - Requirement 使用稳定编号，tasks.md 必须引用该编号。
+  design:
+    - 明确资源所有权、生命周期、失败与取消、安全默认值、迁移和回滚。
+    - 区分已观察事实、建议决策、未验证实现和上游协议待确认项。
+    - 设计必须兼顾 Java 8/17/21，现代 JDK 能力只能作为兼容适配或可选增强。
+  tasks:
+    - 使用未勾选编号任务；每项包含规范编号、交付物及验证方法。
+    - 严格 TDD：先失败用例，再最小实现，再重构和全量验证。
+    - 三条兼容线分别记录提交和测试证据；只允许兼容适配差异。

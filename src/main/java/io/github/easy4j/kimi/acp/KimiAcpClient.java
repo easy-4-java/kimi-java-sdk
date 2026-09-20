@@ -334,6 +334,7 @@ public class KimiAcpClient implements AutoCloseable {
             String stopReason = firstText(node, "stopReason", "stop_reason");
             return new KimiAcpTurnResult(sessionId, stopReason, stream.content());
         });
+        stream.bind(future);
         scheduleTimeout(future, config.getReadTimeoutMillis(), "session/prompt turn");
         future.whenComplete((r, error) -> {
             promptStreams.remove(sessionId, stream);
@@ -379,7 +380,11 @@ public class KimiAcpClient implements AutoCloseable {
     public void cancel(String sessionId) {
         Map<String, Object> params = new LinkedHashMap<String, Object>();
         params.put("sessionId", sessionId);
+        PromptStream stream = promptStreams.get(sessionId);
         notify("session/cancel", params);
+        if (stream != null) {
+            stream.cancel();
+        }
     }
 
     /**
@@ -706,10 +711,32 @@ public class KimiAcpClient implements AutoCloseable {
         private final StringBuilder content = new StringBuilder();
         private final Consumer<String> onDelta;
         private volatile RuntimeException callbackFailure;
+        private volatile CompletableFuture<KimiAcpTurnResult> turnFuture;
         private boolean truncationWarned;
 
         PromptStream(String sessionId, Consumer<String> onDelta) {
             this.onDelta = onDelta;
+        }
+
+        void bind(CompletableFuture<KimiAcpTurnResult> future) {
+            this.turnFuture = future;
+        }
+
+        void cancel() {
+            CompletableFuture<KimiAcpTurnResult> future = turnFuture;
+            if (future != null) {
+                future.completeExceptionally(new KimiException(
+                        "kimi acp session/prompt cancelled: " + sessionId()));
+            }
+        }
+
+        private String sessionId() {
+            for (Map.Entry<String, PromptStream> entry : promptStreams.entrySet()) {
+                if (entry.getValue() == this) {
+                    return entry.getKey();
+                }
+            }
+            return "unknown";
         }
 
         void append(String text) {

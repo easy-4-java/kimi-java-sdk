@@ -1,0 +1,50 @@
+name: OpenSpec Strict Validate
+
+on:
+  push:
+    branches:
+      - feature/3.0.x
+    paths:
+      - 'openspec/**'
+      - '.github/workflows/openspec-validate.yml'
+  pull_request:
+    paths:
+      - 'openspec/**'
+      - '.github/workflows/openspec-validate.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: strict / ${{ matrix.change }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        change:
+          - kimi-runtime-foundation
+          - kimi-acp-lifecycle-hardening
+          - kimi-typed-protocol
+          - kimi-unified-events
+          - kimi-server-websocket
+          - kimi-process-hardening
+          - kimi-observability
+          - kimi-branch-parity
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install pinned OpenSpec CLI
+        run: npm install --global @fission-ai/openspec@1.13.1
+
+      - name: Record OpenSpec version
+        run: openspec --version
+
+      - name: Strict validate
+        env:
+          OPENSPEC_TELEMETRY: '0'
+        run: openspec validate "${{ matrix.change }}" --type change --strict --no-interactive

@@ -299,7 +299,10 @@ public class KimiAcpClient implements AutoCloseable {
             throw new IllegalStateException("kimi acp client is closed");
         }
         PromptStream stream = new PromptStream(sessionId, onDelta);
-        promptStreams.put(sessionId, stream);
+        PromptStream active = promptStreams.putIfAbsent(sessionId, stream);
+        if (active != null) {
+            throw new KimiException("kimi acp session already has an active prompt: " + sessionId);
+        }
         Map<String, Object> content = new LinkedHashMap<String, Object>();
         content.put("type", "text");
         content.put("text", text);
@@ -308,14 +311,24 @@ public class KimiAcpClient implements AutoCloseable {
         Map<String, Object> params = new LinkedHashMap<String, Object>();
         params.put("sessionId", sessionId);
         params.put("prompt", blocks);
-        CompletableFuture<JsonNode> response = request("session/prompt", params);
+        final CompletableFuture<JsonNode> response;
+        try {
+            response = request("session/prompt", params);
+        } catch (RuntimeException e) {
+            promptStreams.remove(sessionId, stream);
+            throw e;
+        }
         CompletableFuture<KimiAcpTurnResult> future = response.thenApply(node -> {
+            RuntimeException callbackFailure = stream.callbackFailure();
+            if (callbackFailure != null) {
+                throw new KimiException("kimi acp prompt callback failed", callbackFailure);
+            }
             String stopReason = firstText(node, "stopReason", "stop_reason");
             return new KimiAcpTurnResult(sessionId, stopReason, stream.content());
         });
         scheduleTimeout(future, config.getReadTimeoutMillis(), "session/prompt turn");
         future.whenComplete((r, error) -> {
-            promptStreams.remove(sessionId);
+            promptStreams.remove(sessionId, stream);
             if (error != null) {
                 response.completeExceptionally(error);
             }
@@ -427,8 +440,15 @@ public class KimiAcpClient implements AutoCloseable {
         if (!closed.compareAndSet(false, true)) {
             return;
         }
+        connected.set(false);
         timer.shutdownNow();
+        PrintWriter writer = stdin;
+        stdin = null;
+        if (writer != null) {
+            writer.close();
+        }
         Process current = process;
+        process = null;
         if (current != null) {
             current.destroy();
         }
@@ -447,8 +467,16 @@ public class KimiAcpClient implements AutoCloseable {
         payload.put("method", method);
         payload.put("params", params);
         CompletableFuture<JsonNode> future = new CompletableFuture<JsonNode>();
-        pendingRpcs.put(Long.valueOf(id), future);
-        writeJson(payload);
+        Long rpcId = Long.valueOf(id);
+        pendingRpcs.put(rpcId, future);
+        future.whenComplete((result, error) -> pendingRpcs.remove(rpcId, future));
+        try {
+            writeJson(payload);
+        } catch (RuntimeException e) {
+            pendingRpcs.remove(rpcId, future);
+            future.completeExceptionally(e);
+            throw e;
+        }
         return future;
     }
 
@@ -508,6 +536,16 @@ public class KimiAcpClient implements AutoCloseable {
             if (!closed.get()) {
                 failAllPending(new KimiException("kimi acp stdout read failed", e));
             }
+        } catch (KimiException e) {
+            if (!closed.get()) {
+                failAllPending(e);
+                Process current = process;
+                if (current != null) {
+                    current.destroy();
+                }
+            }
+        } finally {
+            connected.set(false);
         }
     }
 
@@ -516,8 +554,7 @@ public class KimiAcpClient implements AutoCloseable {
         try {
             node = mapper.readTree(frame);
         } catch (Exception ex) {
-            log.warn("Ignored non-JSON frame from kimi acp");
-            return;
+            throw new KimiException("kimi acp protocol received invalid JSON frame", ex);
         }
         if (node.hasNonNull("id")) {
             CompletableFuture<JsonNode> pending = pendingRpcs.remove(Long.valueOf(node.get("id").asLong()));
@@ -631,6 +668,7 @@ public class KimiAcpClient implements AutoCloseable {
         private final StringBuilder content = new StringBuilder();
         private final Consumer<String> onDelta;
         private boolean truncationWarned;
+        private volatile RuntimeException callbackFailure;
 
         PromptStream(String sessionId, Consumer<String> onDelta) {
             this.onDelta = onDelta;
@@ -653,9 +691,18 @@ public class KimiAcpClient implements AutoCloseable {
                 }
             }
             content.append(applied);
-            if (!applied.isEmpty() && onDelta != null) {
-                onDelta.accept(applied);
+            if (!applied.isEmpty() && onDelta != null && callbackFailure == null) {
+                try {
+                    onDelta.accept(applied);
+                } catch (RuntimeException e) {
+                    callbackFailure = e;
+                    log.warn("kimi acp prompt callback failed; transport remains active");
+                }
             }
+        }
+
+        RuntimeException callbackFailure() {
+            return callbackFailure;
         }
 
         String content() {

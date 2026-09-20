@@ -536,7 +536,14 @@ public class KimiAcpClient implements AutoCloseable {
         try {
             node = mapper.readTree(frame);
         } catch (Exception ex) {
-            log.warn("Ignored non-JSON frame from kimi acp");
+            KimiException error = new KimiException("kimi acp protocol malformed JSON frame", ex);
+            log.warn("kimi acp malformed JSON frame, tearing transport down");
+            failAllPending(error);
+            connected.set(false);
+            Process current = process;
+            if (current != null) {
+                current.destroy();
+            }
             return;
         }
         if (node.hasNonNull("id")) {

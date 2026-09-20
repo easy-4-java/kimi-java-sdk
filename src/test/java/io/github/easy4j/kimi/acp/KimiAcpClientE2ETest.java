@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.lang.reflect.Field;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
@@ -181,6 +182,29 @@ class KimiAcpClientE2ETest {
         KimiAcpClient client = new KimiAcpClient(config);
         assertThrows(KimiException.class, client::connect);
         assertFalse(client.isClosed(), "failed connect must leave the client open for a retry");
+    }
+
+    @Test
+    void shouldForceTerminateOwnedProcessOnClose() throws Exception {
+        KimiAcpClient client = new KimiAcpClient(config("--ignore-term"));
+        client.connect();
+
+        Field processField = KimiAcpClient.class.getDeclaredField("process");
+        processField.setAccessible(true);
+        Process child = (Process) processField.get(client);
+        assertTrue(child.isAlive());
+
+        client.close();
+
+        boolean aliveAfterClose = child.isAlive();
+        if (aliveAfterClose) {
+            child.destroyForcibly();
+            child.waitFor(2, TimeUnit.SECONDS);
+        }
+
+        assertFalse(aliveAfterClose,
+                "close must not return while its owned ACP process is still alive");
+        assertEquals(KimiAcpState.CLOSED, client.getState());
     }
 
     @Test

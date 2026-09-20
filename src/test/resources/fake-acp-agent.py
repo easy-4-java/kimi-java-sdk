@@ -53,7 +53,7 @@ def main():
         elif method == "session/fork":
             reply(req_id, {"sessionId": "sess_forked"})
         elif method == "session/list" and "--malformed-on-list" in MODES:
-            sys.stdout.write("{not-json}\\n")
+            sys.stdout.write("{not-json}\n")
             sys.stdout.flush()
             time.sleep(2)
         elif method in ("session/list", "session/set_mode", "session/set_model",

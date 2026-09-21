@@ -90,6 +90,45 @@ public final class KimiProtocolMapper {
                 extensions);
     }
 
+    public KimiToolCall readToolCall(String json) {
+        JsonNode root = readObject(json, "Kimi tool call");
+        return new KimiToolCall(root.path("id").asText(null),
+                root.path("name").asText(null),
+                root.path("arguments").deepCopy(),
+                extensions(root, "id", "name", "arguments"));
+    }
+
+    public KimiError readError(String json) {
+        JsonNode root = readObject(json, "Kimi error");
+        JsonNode code = root.path("code").isMissingNode() ? null : root.path("code").deepCopy();
+        JsonNode data = root.path("data").isMissingNode() ? null : root.path("data").deepCopy();
+        return new KimiError(code,
+                root.path("message").asText(null),
+                data,
+                extensions(root, "code", "message", "data"));
+    }
+
+    public KimiModel readModel(String json) {
+        JsonNode root = readObject(json, "Kimi model");
+        return new KimiModel(root.path("id").asText(null),
+                root.path("name").asText(null),
+                extensions(root, "id", "name"));
+    }
+
+    public KimiMode readMode(String json) {
+        JsonNode root = readObject(json, "Kimi mode");
+        return new KimiMode(root.path("id").asText(null),
+                root.path("name").asText(null),
+                extensions(root, "id", "name"));
+    }
+
+    public KimiProvider readProvider(String json) {
+        JsonNode root = readObject(json, "Kimi provider");
+        return new KimiProvider(root.path("id").asText(null),
+                root.path("name").asText(null),
+                extensions(root, "id", "name"));
+    }
+
     private JsonNode readObject(String json, String what) {
         if (json == null) {
             throw new NullPointerException("json");

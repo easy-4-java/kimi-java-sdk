@@ -50,9 +50,7 @@ class KimiProtocolRawTypedParityTest {
     }
     @Test
     void shouldParseDescriptorAndSessionModelsFromCallerOwnedRawNodes() throws Exception {
-        com.fasterxml.jackson.databind.JsonNode ignored = null;
-        // The fully-qualified marker above is intentionally absent from production use;
-        // this test exercises every remaining raw-node overload on Jackson 3.
+        // Exercise every remaining raw-node overload on Jackson 3.
         JsonNode sessionRaw = JsonMapper.builder().build().readTree(
                 "{\"sessionId\":\"s2\",\"model\":\"kimi-k2\",\"mode\":\"code\",\"future\":1}");
         JsonNode toolRaw = JsonMapper.builder().build().readTree(

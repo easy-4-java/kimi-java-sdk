@@ -47,15 +47,11 @@ public final class KimiProtocolMapper {
     }
 
     public KimiSession readSession(String json) {
-        return readSession(readObject(json, "Kimi session"));
-    }
-
-    public KimiSession readSession(JsonNode root) {
-        JsonNode object = requireObject(root, "Kimi session");
-        Map<String, JsonNode> extensions = extensions(object, "sessionId", "session_id", "model", "mode");
-        return new KimiSession(firstText(object, "sessionId", "session_id"),
-                object.path("model").asText(null),
-                object.path("mode").asText(null),
+        JsonNode root = readObject(json, "Kimi session");
+        Map<String, JsonNode> extensions = extensions(root, "sessionId", "session_id", "model", "mode");
+        return new KimiSession(firstText(root, "sessionId", "session_id"),
+                root.path("model").asText(null),
+                root.path("mode").asText(null),
                 extensions);
     }
 
@@ -81,62 +77,42 @@ public final class KimiProtocolMapper {
     }
 
     public KimiToolCall readToolCall(String json) {
-        return readToolCall(readObject(json, "Kimi tool call"));
-    }
-
-    public KimiToolCall readToolCall(JsonNode root) {
-        JsonNode object = requireObject(root, "Kimi tool call");
-        return new KimiToolCall(object.path("id").asText(null),
-                object.path("name").asText(null),
-                object.path("arguments").deepCopy(),
-                extensions(object, "id", "name", "arguments"));
+        JsonNode root = readObject(json, "Kimi tool call");
+        return new KimiToolCall(root.path("id").asText(null),
+                root.path("name").asText(null),
+                root.path("arguments").deepCopy(),
+                extensions(root, "id", "name", "arguments"));
     }
 
     public KimiError readError(String json) {
-        return readError(readObject(json, "Kimi error"));
-    }
-
-    public KimiError readError(JsonNode root) {
-        JsonNode object = requireObject(root, "Kimi error");
-        JsonNode code = object.path("code").isMissingNode() ? null : object.path("code").deepCopy();
-        JsonNode data = object.path("data").isMissingNode() ? null : object.path("data").deepCopy();
+        JsonNode root = readObject(json, "Kimi error");
+        JsonNode code = root.path("code").isMissingNode() ? null : root.path("code").deepCopy();
+        JsonNode data = root.path("data").isMissingNode() ? null : root.path("data").deepCopy();
         return new KimiError(code,
-                object.path("message").asText(null),
+                root.path("message").asText(null),
                 data,
-                extensions(object, "code", "message", "data"));
+                extensions(root, "code", "message", "data"));
     }
 
     public KimiModel readModel(String json) {
-        return readModel(readObject(json, "Kimi model"));
-    }
-
-    public KimiModel readModel(JsonNode root) {
-        JsonNode object = requireObject(root, "Kimi model");
-        return new KimiModel(object.path("id").asText(null),
-                object.path("name").asText(null),
-                extensions(object, "id", "name"));
+        JsonNode root = readObject(json, "Kimi model");
+        return new KimiModel(root.path("id").asText(null),
+                root.path("name").asText(null),
+                extensions(root, "id", "name"));
     }
 
     public KimiMode readMode(String json) {
-        return readMode(readObject(json, "Kimi mode"));
-    }
-
-    public KimiMode readMode(JsonNode root) {
-        JsonNode object = requireObject(root, "Kimi mode");
-        return new KimiMode(object.path("id").asText(null),
-                object.path("name").asText(null),
-                extensions(object, "id", "name"));
+        JsonNode root = readObject(json, "Kimi mode");
+        return new KimiMode(root.path("id").asText(null),
+                root.path("name").asText(null),
+                extensions(root, "id", "name"));
     }
 
     public KimiProvider readProvider(String json) {
-        return readProvider(readObject(json, "Kimi provider"));
-    }
-
-    public KimiProvider readProvider(JsonNode root) {
-        JsonNode object = requireObject(root, "Kimi provider");
-        return new KimiProvider(object.path("id").asText(null),
-                object.path("name").asText(null),
-                extensions(object, "id", "name"));
+        JsonNode root = readObject(json, "Kimi provider");
+        return new KimiProvider(root.path("id").asText(null),
+                root.path("name").asText(null),
+                extensions(root, "id", "name"));
     }
 
     private JsonNode requireObject(JsonNode root, String what) {

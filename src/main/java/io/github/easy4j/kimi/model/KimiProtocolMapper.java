@@ -30,38 +30,20 @@ public final class KimiProtocolMapper {
     }
 
     public KimiMessage readMessage(String json) {
-        if (json == null) {
-            throw new NullPointerException("json");
-        }
-        try {
-            JsonNode root = mapper.readTree(json);
-            if (root == null || !root.isObject()) {
-                throw new KimiException("Kimi message must be a JSON object");
-            }
+        return readMessage(readObject(json, "Kimi message"));
+    }
 
-            String role = root.path("role").asText(null);
-            List<KimiContentBlock> blocks = new ArrayList<KimiContentBlock>();
-            JsonNode content = root.path("content");
-            if (content.isArray()) {
-                for (JsonNode node : content) {
-                    blocks.add(readContentBlock(node));
-                }
+    public KimiMessage readMessage(JsonNode root) {
+        JsonNode object = requireObject(root, "Kimi message");
+        String role = object.path("role").asText(null);
+        List<KimiContentBlock> blocks = new ArrayList<KimiContentBlock>();
+        JsonNode content = object.path("content");
+        if (content.isArray()) {
+            for (JsonNode node : content) {
+                blocks.add(readContentBlock(node));
             }
-
-            Map<String, JsonNode> extensions = new LinkedHashMap<String, JsonNode>();
-            for (Map.Entry<String, JsonNode> entry : root.properties()) {
-                String name = entry.getKey();
-                if (!"role".equals(name) && !"content".equals(name)) {
-                    JsonNode value = entry.getValue();
-                    extensions.put(name, value == null ? null : value.deepCopy());
-                }
-            }
-            return new KimiMessage(role, blocks, extensions);
-        } catch (KimiException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new KimiException("Failed to parse Kimi message", e);
         }
+        return new KimiMessage(role, blocks, extensions(object, "role", "content"));
     }
 
     public KimiSession readSession(String json) {
@@ -74,18 +56,22 @@ public final class KimiProtocolMapper {
     }
 
     public KimiPromptResult readPromptResult(String json) {
-        JsonNode root = readObject(json, "Kimi prompt result");
-        JsonNode usageNode = root.path("usage");
+        return readPromptResult(readObject(json, "Kimi prompt result"));
+    }
+
+    public KimiPromptResult readPromptResult(JsonNode root) {
+        JsonNode object = requireObject(root, "Kimi prompt result");
+        JsonNode usageNode = object.path("usage");
         KimiUsage usage = usageNode.isObject()
                 ? new KimiUsage(usageNode.path("inputTokens").asLong(0L),
                         usageNode.path("outputTokens").asLong(0L),
                         usageNode.path("totalTokens").asLong(0L))
                 : null;
-        Map<String, JsonNode> extensions = extensions(root,
+        Map<String, JsonNode> extensions = extensions(object,
                 "sessionId", "session_id", "stopReason", "stop_reason", "content", "usage");
-        return new KimiPromptResult(firstText(root, "sessionId", "session_id"),
-                KimiStopReason.of(firstText(root, "stopReason", "stop_reason")),
-                root.path("content").asText(null),
+        return new KimiPromptResult(firstText(object, "sessionId", "session_id"),
+                KimiStopReason.of(firstText(object, "stopReason", "stop_reason")),
+                object.path("content").asText(null),
                 usage,
                 extensions);
     }
@@ -129,16 +115,20 @@ public final class KimiProtocolMapper {
                 extensions(root, "id", "name"));
     }
 
+    private JsonNode requireObject(JsonNode root, String what) {
+        if (root == null || !root.isObject()) {
+            throw new KimiException(what + " must be a JSON object");
+        }
+        return root;
+    }
+
     private JsonNode readObject(String json, String what) {
         if (json == null) {
             throw new NullPointerException("json");
         }
         try {
             JsonNode root = mapper.readTree(json);
-            if (root == null || !root.isObject()) {
-                throw new KimiException(what + " must be a JSON object");
-            }
-            return root;
+            return requireObject(root, what);
         } catch (KimiException e) {
             throw e;
         } catch (Exception e) {

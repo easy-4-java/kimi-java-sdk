@@ -24,6 +24,11 @@ public final class KimiPromptResult {
         this.extensions = KimiSession.immutableExtensions(extensions);
     }
 
+    public static KimiPromptResult of(String sessionId, String stopReason, String content) {
+        return new KimiPromptResult(sessionId, KimiStopReason.of(stopReason),
+                content, null, java.util.Collections.<String, JsonNode>emptyMap());
+    }
+
     public String getSessionId() { return sessionId; }
     public KimiStopReason getStopReason() { return stopReason; }
     public String getContent() { return content; }

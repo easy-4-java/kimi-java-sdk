@@ -41,6 +41,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import io.github.easy4j.kimi.KimiException;
+import io.github.easy4j.kimi.model.KimiPromptRequest;
+import io.github.easy4j.kimi.model.KimiPromptResult;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.json.JsonMapper;
@@ -343,6 +345,28 @@ public class KimiAcpClient implements AutoCloseable {
             }
         });
         return future;
+    }
+
+    /**
+     * Runs one typed prompt turn asynchronously while preserving the legacy
+     * string-based ACP API.
+     */
+    public CompletableFuture<KimiPromptResult> promptAsync(
+            KimiPromptRequest request, Consumer<String> onDelta) {
+        Objects.requireNonNull(request, "request");
+        return promptAsync(request.getSessionId(), request.getText(), onDelta)
+                .thenApply(result -> KimiPromptResult.of(
+                        result.getSessionId(), result.getStopReason(), result.getContent()));
+    }
+
+    /**
+     * Runs one typed prompt turn while preserving the legacy string-based ACP API.
+     */
+    public KimiPromptResult prompt(KimiPromptRequest request, Consumer<String> onDelta) {
+        Objects.requireNonNull(request, "request");
+        KimiAcpTurnResult result = prompt(request.getSessionId(), request.getText(), onDelta);
+        return KimiPromptResult.of(
+                result.getSessionId(), result.getStopReason(), result.getContent());
     }
 
     /**

@@ -4,16 +4,13 @@
  */
 package io.github.easy4j.kimi;
 
-/**
- * Raised when an operation is attempted after a runtime is closed.
- */
 public class KimiRuntimeClosedException extends KimiException {
 
     public KimiRuntimeClosedException(String message) {
-        super(message);
+        super(KimiErrorCategory.RUNTIME_CLOSED, message);
     }
 
     public KimiRuntimeClosedException(String message, Throwable cause) {
-        super(message, cause);
+        super(KimiErrorCategory.RUNTIME_CLOSED, message, cause);
     }
 }

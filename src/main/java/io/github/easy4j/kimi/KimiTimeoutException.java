@@ -4,16 +4,13 @@
  */
 package io.github.easy4j.kimi;
 
-/**
- * Raised when a Kimi runtime operation exceeds its deadline.
- */
 public class KimiTimeoutException extends KimiException {
 
     public KimiTimeoutException(String message) {
-        super(message);
+        super(KimiErrorCategory.TIMEOUT, message);
     }
 
     public KimiTimeoutException(String message, Throwable cause) {
-        super(message, cause);
+        super(KimiErrorCategory.TIMEOUT, message, cause);
     }
 }

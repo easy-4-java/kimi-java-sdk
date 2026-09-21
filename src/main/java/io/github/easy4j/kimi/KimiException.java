@@ -16,31 +16,34 @@
 package io.github.easy4j.kimi;
 
 /**
- * Unchecked exception raised by the ACP and web-server routes when a turn or
- * HTTP call fails: connection errors, JSON-RPC errors, malformed frames,
- * read timeouts and non-zero business codes are all surfaced as this type.
+ * Base unchecked exception raised by kimi-java-sdk.
  *
- * @author <a href="https://github.com/loong10k">Loong Wan</a>
- * @since 1.0.0
+ * <p>Existing constructors retain the historical GENERAL category so callers
+ * that already catch {@code KimiException} remain source compatible. New
+ * specialized exceptions expose a stable {@link KimiErrorCategory}.</p>
  */
 public class KimiException extends RuntimeException {
 
-    /**
-     * Creates an exception with a message.
-     *
-     * @param message human-readable description of the failure.
-     */
+    private final KimiErrorCategory category;
+
     public KimiException(String message) {
-        super(message);
+        this(KimiErrorCategory.GENERAL, message, null);
     }
 
-    /**
-     * Creates an exception with a message and a cause.
-     *
-     * @param message human-readable description of the failure.
-     * @param cause   the underlying cause, may be {@code null}.
-     */
     public KimiException(String message, Throwable cause) {
+        this(KimiErrorCategory.GENERAL, message, cause);
+    }
+
+    protected KimiException(KimiErrorCategory category, String message) {
+        this(category, message, null);
+    }
+
+    protected KimiException(KimiErrorCategory category, String message, Throwable cause) {
         super(message, cause);
+        this.category = category == null ? KimiErrorCategory.GENERAL : category;
+    }
+
+    public KimiErrorCategory getCategory() {
+        return category;
     }
 }

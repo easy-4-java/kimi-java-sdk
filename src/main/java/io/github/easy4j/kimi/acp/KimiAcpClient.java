@@ -164,8 +164,8 @@ public class KimiAcpClient implements AutoCloseable {
             // Handshake failure leaves the child alive — destroy it here so a
             // discarded client cannot leak the process, and allow a retry.
             Process current = process;
-            if (current != null) {
-                current.destroy();
+            if (Objects.nonNull(current)) {
+                stopOwnedProcess(current);
             }
             process = null;
             stdin = null;
@@ -472,11 +472,24 @@ public class KimiAcpClient implements AutoCloseable {
         }
         Process current = process;
         process = null;
-        if (current != null) {
-            current.destroy();
+        if (Objects.nonNull(current)) {
+            stopOwnedProcess(current);
         }
         failAllPending(new KimiException("kimi acp client closed"));
         state.set(KimiAcpState.CLOSED);
+    }
+
+    private static void stopOwnedProcess(Process current) {
+        current.destroy();
+        try {
+            if (!current.waitFor(200, TimeUnit.MILLISECONDS)) {
+                current.destroyForcibly();
+                current.waitFor(800, TimeUnit.MILLISECONDS);
+            }
+        } catch (InterruptedException e) {
+            current.destroyForcibly();
+            Thread.currentThread().interrupt();
+        }
     }
 
     // ============================================================

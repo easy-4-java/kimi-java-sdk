@@ -36,13 +36,17 @@
 - Java 17 / Jackson 2：PASS
 - Java 8 / Jackson 2：PASS
 
+2026-11-18 补充：`stubborn-close` 回归测试在原提交上本地 RED，
+`close()` 加入有界 graceful/force shutdown 后转 GREEN；JDK 21 + Maven 4
+`clean verify` 执行 81 个测试，零失败。修复 Surefire 的 `argLine` 后 JaCoCo
+开始记录真实覆盖率：约 75%，低于未改动的 90% 提示目标；本地通过不代替远端 CI。
+
 ## Remaining Gates
 
 以下内容尚未完成，因此本 Change 仍为 **IN PROGRESS**，不得宣称全部 production-ready：
 
 - response/timeout/cancel/close 的 barrier 级高并发 race 压测；
 - 不同 session 的并发 turn isolation 压测；
-- stubborn child process 的有界 graceful/force shutdown；
 - 线程、timer、process 的重复循环 leak baseline；
 - hardening 后重新运行 CodeGraph impact review；
 - 最终三线合并后的 CI 与 workspace/release hygiene。
